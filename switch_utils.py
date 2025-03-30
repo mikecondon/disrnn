@@ -15,7 +15,7 @@ def find(s, ch):
 def str2int(x):
   return int(x.split('_')[1])
 
-def get_dataset(addr: str, tr_prop: float=0.7, va_prop: float=0, te_prop:float=0):
+def get_dataset(addr: str, tr_prop: float=1, va_prop: float=0, te_prop:float=0):
   """
   load dataset from filename
   """

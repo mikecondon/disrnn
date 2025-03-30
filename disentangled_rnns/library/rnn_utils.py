@@ -54,6 +54,8 @@ class DatasetRNN():
 
     if batch_size is None:
       batch_size = xs.shape[1]
+    if batch_size == 0:
+      batch_size = 1
 
     # Error checking
     # Do xs and ys have the same number of timesteps?

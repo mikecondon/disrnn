@@ -252,12 +252,13 @@ def create_dataset(agent: Agent,
                    environment: EnvironmentBanditsDrift,
                    n_steps_per_session: int,
                    n_sessions: int,
-                   batch_size: int) -> DatasetRNN:
+                   batch_size: int,
+                   plot: bool,) -> DatasetRNN:
   """Generates a behavioral dataset from a given agent and environment.
 
   Args:
     agent: An agent object to generate choices
-    environment: An environment object to generate rewards
+    environment: An environment object  to generate rewards
     n_steps_per_session: The number of trials in each behavioral session to
       be generated
     n_sessions: The number of sessions to generate

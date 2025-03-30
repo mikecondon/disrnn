@@ -15,7 +15,15 @@ keywords = []
 
 # pip dependencies of the project
 # Installed locally with `pip install -e .`
-dependencies = []
+dependencies = [
+    "absl-py>=2.2.0",
+    "chex>=0.1.7",
+    "dm-haiku>=0.0.13",
+    "flax>=0.7.2",
+    "matplotlib>=3.7.5",
+    "pandas>=2.0.3",
+    "tqdm>=4.67.1",
+]
 
 # `version` is automatically set by flit to use `disentangled_rnns.__version__`
 dynamic = ["version"]
@@ -48,6 +56,11 @@ pyink-use-majority-quotes = true
 # poetry, setuptools,...). All backends are supported by `pip install`
 requires = ["flit_core >=3.8,<4"]
 build-backend = "flit_core.buildapi"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+]
 
 [tool.flit.sdist]
 # Flit specific options (files to exclude from the PyPI package).

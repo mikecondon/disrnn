@@ -25,6 +25,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import optax
+from tqdm.auto import tqdm
 
 
 class DatasetRNN():
@@ -124,7 +125,7 @@ def train_network(
     n_steps: int = 1000,
     max_grad_norm: float = 1e10,
     penalty_scale=0,
-    loss: str = 'mse',
+    l_train: str = 'mse',
     do_plot: bool = False,
 ) -> Tuple[hk.Params, optax.OptState, Dict[str, np.ndarray]]:
   """Trains a network.
@@ -257,7 +258,7 @@ def train_network(
       'categorical': categorical_loss,
       'penalized_categorical': penalized_categorical_loss,
   }
-  compute_loss = jax.jit(losses[loss])
+  compute_loss = jax.jit(losses[l_train])
 
   # Define what it means to train a single step
   @jax.jit
@@ -276,7 +277,8 @@ def train_network(
   training_loss = []
   validation_loss = []
   l_validation = None
-  for step in jnp.arange(n_steps):
+  pbar = tqdm(jnp.arange(n_steps), desc="Training Progress")
+  for step in pbar:
     random_key, key1, key2 = jax.random.split(random_key, 3)
     # Test on validation data
     xs, ys = next(validation_dataset)
@@ -284,23 +286,24 @@ def train_network(
     validation_loss.append(float(l_validation))
     # Train on training data
     xs, ys = next(training_dataset)
-    loss, params, opt_state = train_step(params, opt_state, xs, ys, key2)
-    training_loss.append(float(loss))
-    if step % 10 == 9:
+    l_train, params, opt_state = train_step(params, opt_state, xs, ys, key2)
+    training_loss.append(float(l_train))
+    if step % 10 == 9 or step==n_steps-1:
+      pbar.set_postfix({
+            "Train Loss": f"{l_train:.2e}",
+            "Val Loss": f"{l_validation:.2e}"
+        })
       logging.info(
           'Step {} of {}. Training Loss: {:.2e}. Validation Loss: {:.2e}'
-          .format(step + 1, n_steps, loss, l_validation))
-      print((f'Step {step + 1} of {n_steps}. '
-             f'Training Loss: {loss:.2e}. '
-             f'Validation Loss: {l_validation:.2e}'), end='\r'
-            )
+          .format(step + 1, n_steps, l_train, l_validation))
+  pbar.close()
 
   # If we actually did any training, print final loss and make a nice plot
-  if n_steps > 1 and do_plot:
-    print((f'Step {n_steps} of {n_steps}. '
-           f'Training Loss: {loss:.2e}. '
-           f'Validation Loss: {l_validation:.2e}'))
+  if n_steps > 0:
+    print(f"\nFinal Training Loss: {training_loss[-1]:.2e}")
+    print(f"Final Validation Loss: {validation_loss[-1]:.2e}")
 
+  if n_steps > 1 and do_plot:
     plt.figure()
     plt.semilogy(training_loss, color='black')
     plt.semilogy(validation_loss, color='tab:red', linestyle='dashed')

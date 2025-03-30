@@ -4,6 +4,7 @@ from disentangled_rnns.library import rnn_utils
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import math
 
 DatasetRNN = rnn_utils.DatasetRNN
 
@@ -14,10 +15,12 @@ def find(s, ch):
 def str2int(x):
   return int(x.split('_')[1])
 
-def get_dataset(addr: str):
+def get_dataset(addr: str, tr_prop: float=0.7, va_prop: float=0, te_prop:float=0):
   """
   load dataset from filename
   """
+  assert math.isclose(sum((tr_prop, va_prop, te_prop)), 1, rel_tol=1e-2)
+  assert tr_prop >= 0 and va_prop >= 0 and te_prop >= 0
   df = pd.read_csv(addr)
   mice = df.Mouse.unique()
   ds_list = []
@@ -45,7 +48,17 @@ def get_dataset(addr: str):
         (0. * np.ones((1, n_sess, 2)), choice_and_reward), axis=0
     )
     ys = np.concatenate((choices_by_session, -1*np.ones((1, n_sess, 1))), axis=0)
-    ds_m = rnn_utils.DatasetRNN(xs=xs, ys=ys)
-    ds_list.append(ds_m)
+
+    idx = np.random.permutation(np.arange(n_sess))
+    xs = xs[:, idx, :]
+    ys = ys[:, idx, :]
+    tr_end = math.floor(tr_prop * n_sess)
+    va_end = math.floor((tr_prop + va_prop) * n_sess)
+
+    ds_m_tr = rnn_utils.DatasetRNN(xs=xs[:, :tr_end, :], ys=ys[:, :tr_end, :])
+    ds_m_va = rnn_utils.DatasetRNN(xs=xs[:, tr_end:va_end, :], ys=ys[:, tr_end:va_end, :])
+    ds_m_te = rnn_utils.DatasetRNN(xs=xs[:, va_end:, :], ys=ys[:, va_end:, :])
+
+    ds_list.append((m_i, ds_m_tr, ds_m_va, ds_m_te))
 
   return ds_list

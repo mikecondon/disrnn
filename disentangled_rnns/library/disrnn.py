@@ -222,7 +222,7 @@ def plot_bottlenecks(params, sort_latents=True, obs_names=None):
   latent_names = np.arange(1, latent_dim + 1)
   fig = plt.subplots(1, 2, figsize=(10, 5))
   plt.subplot(1, 2, 1)
-  plt.imshow(np.swapaxes([1 - latent_sigmas], 0, 1), cmap='Oranges_r')
+  plt.imshow(np.swapaxes([1 - latent_sigmas], 0, 1), cmap='Oranges')
   plt.clim(vmin=0, vmax=1)
   plt.yticks(ticks=range(latent_dim), labels=latent_names)
   plt.xticks(ticks=[])

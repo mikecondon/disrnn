@@ -52,7 +52,7 @@ class DatasetRNN():
 
     """
 
-    if batch_size is None:
+    if batch_size is None or batch_size > xs.shape[1]:
       batch_size = xs.shape[1]
     if batch_size == 0:
       batch_size = 1
@@ -71,9 +71,9 @@ class DatasetRNN():
       raise ValueError(msg.format(xs.shape[0], ys.shape[0]))
 
     # Is the number of episodes divisible by the batch size?
-    if xs.shape[1] % batch_size != 0:
-      msg = 'dataset size {} must be divisible by batch_size {}.'
-      raise ValueError(msg.format(xs.shape[1], batch_size))
+    # if xs.shape[1] % batch_size != 0:
+    #   msg = 'dataset size {} must be divisible by batch_size {}.'
+    #   raise ValueError(msg.format(xs.shape[1], batch_size))
 
     # Property setting
     self._xs = xs
@@ -81,7 +81,7 @@ class DatasetRNN():
     self._batch_size = batch_size
     self._dataset_size = self._xs.shape[1]
     self._idx = 0
-    self.n_batches = self._dataset_size // self._batch_size
+    self.n_batches = self._dataset_size // self._batch_size + 1
 
   def __iter__(self):
     return self
@@ -93,16 +93,22 @@ class DatasetRNN():
     start = self._idx
     end = start + self._batch_size
     # Check that we're not trying to overshoot the size of the dataset
-    assert end <= self._dataset_size
-
+    # assert end <= self._dataset_size
     # Update the index for next time
-    if end == self._dataset_size:
-      self._idx = 0
+    # if end == self._dataset_size:
+    if end >= self._dataset_size:
+      x = jnp.concatenate((self._xs[:, start:], self._xs[:, :end%self._dataset_size]), axis=1)
+      y = jnp.concatenate((self._ys[:, start:], self._ys[:, :end%self._dataset_size]), axis=1)
+      self._idx = end % self._dataset_size
     else:
+      x = self._xs[:, start:end]
+      y = self._ys[:, start:end]
       self._idx = end
 
-    # Get the chunks of data
-    x, y = self._xs[:, start:end], self._ys[:, start:end]
+    # pad_n = max(0, end - self._dataset_size)
+    # x = jnp.pad(self._xs[:, start:end, :], ((0,0), (0,pad_n), (0,0)), 'constant', constant_values=-1.0)
+    # y = jnp.pad(self._ys[:, start:end, :], ((0,0), (0,pad_n), (0,0)), 'constant', constant_values=-1.0)
+    # x = self._xs[:, start:end]
 
     return x, y
 
@@ -127,7 +133,7 @@ def train_network(
     n_steps: int = 1000,
     max_grad_norm: float = 1e10,
     penalty_scale=0,
-    l_train: str = 'mse',
+    ltype_tr: str = 'mse',
     do_plot: bool = False,
 ) -> Tuple[hk.Params, optax.OptState, Dict[str, np.ndarray]]:
   """Trains a network.
@@ -247,7 +253,7 @@ def train_network(
     # (n_steps, n_episodes, n_targets)
     model_output = model.apply(params, random_key, xs)
     output_logits = model_output[:, :, :-1]
-    penalty = jnp.sum(model_output[:, :, -1])  # ()
+    penalty = jnp.sum(model_output[:, :, -1])
     loss = (
         categorical_log_likelihood(targets, output_logits)
         + penalty_scale * penalty
@@ -260,7 +266,7 @@ def train_network(
       'categorical': categorical_loss,
       'penalized_categorical': penalized_categorical_loss,
   }
-  compute_loss = jax.jit(losses[l_train])
+  compute_loss = jax.jit(losses[ltype_tr])
 
   # Define what it means to train a single step
   @jax.jit
@@ -279,36 +285,30 @@ def train_network(
   training_loss = []
   validation_loss = []
   l_validation = None
-  pbar = tqdm(jnp.arange(n_steps), desc="Training Progress")
+  pbar = tqdm(jnp.arange(n_steps), desc="Training Progress", leave=False)
   for step in pbar:
     random_key, key1, key2 = jax.random.split(random_key, 3)
-    # Test on validation data
-    xs, ys = next(validation_dataset)
-    l_validation = compute_loss(params, xs, ys, key1)
-    validation_loss.append(float(l_validation))
     # Train on training data
     xs, ys = next(training_dataset)
     l_train, params, opt_state = train_step(params, opt_state, xs, ys, key2)
-    training_loss.append(float(l_train))
+    training_loss.append(float(l_train) / np.shape(xs)[1])
     if step % 10 == 9 or step==n_steps-1:
+      xs, ys = validation_dataset._xs, validation_dataset._ys
+      l_validation = compute_loss(params, xs, ys, key1)
+      validation_loss.append(float(l_validation) / np.shape(xs)[1])
       pbar.set_postfix({
-            "Train Loss": f"{l_train:.2e}",
-            "Val Loss": f"{l_validation:.2e}"
+            "Train Loss": f"{l_train / np.shape(xs)[1]:.2e}",
+            "Val Loss": f"{l_validation / np.shape(xs)[1]:.2e}"
         })
       logging.info(
           'Step {} of {}. Training Loss: {:.2e}. Validation Loss: {:.2e}'
           .format(step + 1, n_steps, l_train, l_validation))
   pbar.close()
 
-  # If we actually did any training, print final loss and make a nice plot
-  if n_steps > 0:
-    print(f"\nFinal Training Loss: {training_loss[-1]:.2e}")
-    print(f"Final Validation Loss: {validation_loss[-1]:.2e}")
-
   if n_steps > 1 and do_plot:
     plt.figure()
     plt.semilogy(training_loss, color='black')
-    plt.semilogy(validation_loss, color='tab:red', linestyle='dashed')
+    plt.semilogy(np.linspace(0, len(training_loss), len(validation_loss)), validation_loss, color='tab:red', linestyle='dashed')
     plt.xlabel('Training Step')
     plt.ylabel('Mean Loss')
     plt.legend(('Training Set', 'Validation Set'))

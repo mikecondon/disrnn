@@ -222,7 +222,7 @@ def plot_bottlenecks(params, sort_latents=True, obs_names=None):
   latent_names = np.arange(1, latent_dim + 1)
   fig = plt.subplots(1, 2, figsize=(10, 5))
   plt.subplot(1, 2, 1)
-  plt.imshow(np.swapaxes([1 - latent_sigmas], 0, 1), cmap='Oranges')
+  plt.imshow(np.swapaxes([latent_sigmas], 0, 1), cmap='Oranges')
   plt.clim(vmin=0, vmax=1)
   plt.yticks(ticks=range(latent_dim), labels=latent_names)
   plt.xticks(ticks=[])
@@ -230,7 +230,7 @@ def plot_bottlenecks(params, sort_latents=True, obs_names=None):
   plt.title('Latent Bottlenecks')
 
   plt.subplot(1, 2, 2)
-  plt.imshow(1 - update_sigmas, cmap='Oranges_r')
+  plt.imshow(update_sigmas, cmap='Oranges')
   plt.clim(vmin=0, vmax=1)
   cbar = plt.colorbar(ticks=[0,1])
   cbar.set_ticks(ticks=[0, 1], labels=['0 Open Bottleneck', '1 Closed Bottleneck'])
@@ -247,7 +247,8 @@ def plot_bottlenecks(params, sort_latents=True, obs_names=None):
 
 
 def plot_update_rules(params, make_network):
-  """Generates visualizations of the update ruled of a HkDisRNN.
+  """
+  Generates visualizations of the update ruled of a HkDisRNN.
   """
 
   def step(xs, state):
@@ -303,9 +304,9 @@ def plot_update_rules(params, make_network):
         ax.set_aspect('equal')
     return fig
 
-  def plot_update_2d(params, unit_i, unit_input, observations, titles):
+  def plot_update_2d(params, l_no, l2_no, unit_i, unit_input, observations, titles):
     lim = 3
-
+    print(l_no, l2_no, unit_i, unit_input)
     state_bins = np.linspace(-lim, lim, 20)
     colormap = mpl.colormaps['viridis'].resampled(len(state_bins))
     colors = colormap.colors
@@ -314,7 +315,7 @@ def plot_update_rules(params, make_network):
         1, len(observations), figsize=(len(observations) * 2 + 10, 5.5)
     )
     plt.subplot(1, len(observations), 1)
-    plt.ylabel('Updated Latent ' + str(unit_i + 1) + ' Activity')
+    plt.ylabel('Updated Latent ' + str(l_no + 1) + ' Activity')
 
     for observation_i, observation in enumerate(observations):
       plt.subplot(1, len(observations), observation_i + 1)
@@ -337,7 +338,25 @@ def plot_update_rules(params, make_network):
       plt.title(titles[observation_i])
       plt.xlim(-lim, lim)
       plt.ylim(-lim, lim)
-      plt.xlabel('Latent ' + str(unit_i + 1) + ' Activity')
+      plt.xlabel('Latent ' + str(l_no + 1) + ' Activity')
+
+      norm = plt.Normalize(vmin=state_bins.min(), vmax=state_bins.max())
+      sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm)
+      sm.set_array([])  # You need this for ScalarMappable
+
+      # Adjust figure layout to make space for colorbar (tweak as necessary)
+      fig.subplots_adjust(right=0.85)
+
+      # Add a new axes for the colorbar [left, bottom, width, height] in figure coords
+      # Adjust these values to position the colorbar as desired
+      cbar_ax = fig.add_axes([0.88, 0.15, 0.03, 0.7])
+
+      # Add the colorbar to the new axes
+      cbar = fig.colorbar(sm, cax=cbar_ax)
+
+      # Set the label for the colorbar
+      cbar.set_label(f'Input Latent {l2_no + 1} Activity')
+
 
       if isinstance(ax, np.ndarray):
         ax[observation_i].set_aspect('equal')
@@ -359,7 +378,7 @@ def plot_update_rules(params, make_network):
   figs = []
 
   # Loop over latents. Plot update rules
-  for latent_i in latent_order:
+  for latent_i in range(latent_order.size):
     # If this latent's bottleneck is open
     if latent_sigmas[latent_i] < 0.5:
       # Which of its input bottlenecks are open?
@@ -382,7 +401,8 @@ def plot_update_rules(params, make_network):
       else:
         observations = ([0, 0],)
         titles = ('All Trials',)
-      # Choose whether to condition on other latent values
+      # Choose whether to condition on other latents other than reward and choice
+      # subtract 2 to reindex for just latent bottlenecks.
       latent_sensitive = update_mlp_inputs[update_mlp_inputs > 1] - 2
       # Doesn't count if it depends on itself (this'll be shown no matter what)
       latent_sensitive = np.delete(
@@ -391,10 +411,15 @@ def plot_update_rules(params, make_network):
       if not latent_sensitive.size:  # Depends on no other latents
         fig = plot_update_1d(params, latent_i, observations, titles)
       else:  # It depends on latents other than itself.
+        latent_input = latent_sensitive[np.argmax(latent_sensitive)]
+        l_no = np.argmax(latent_order == latent_i)
+        l2_no = np.argmax(latent_order == latent_input)
         fig = plot_update_2d(
             params,
+            l_no,
+            l2_no,
             latent_i,
-            latent_sensitive[np.argmax(latent_sensitive)],
+            latent_input,
             observations,
             titles,
         )
@@ -405,5 +430,6 @@ def plot_update_rules(params, make_network):
         )
 
       figs.append(fig)
+
 
   return figs

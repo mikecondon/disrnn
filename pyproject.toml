@@ -20,6 +20,7 @@ dependencies = [
     "chex>=0.1.7",
     "dm-haiku>=0.0.13",
     "flax>=0.7.2",
+    "ipywidgets>=8.1.5",
     "matplotlib>=3.7.5",
     "pandas>=2.0.3",
     "tqdm>=4.67.1",

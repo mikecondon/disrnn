@@ -1,8 +1,0 @@
-dm-haiku
-jax
-matplotlib
-numpy
-typing
-absl-py
-chex
-optax

@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import math
 import json, os
+import jax
 import itertools
 
 DatasetRNN = rnn_utils.DatasetRNN
@@ -93,6 +94,7 @@ def split_loader(file_path):
   va_eps = df[df['Side']=='validation']['Session']
   return tr_eps, va_eps
 
+
 def sampler(logits, sample_type, key=None):
   """
   The shape is (no_timesteps, no_sessions, 2). The dimensions of axis 2
@@ -102,16 +104,18 @@ def sampler(logits, sample_type, key=None):
   if key == None:
     key = 42
   rng = np.random.default_rng(seed=key)
-
+  p = jax.nn.softmax(logits, axis=2)
   if sample_type == 'greedy':
-    return np.argmax(logits, axis=2)
+    out_arr = np.argmax(p, axis=2)
   elif sample_type == 'thompson':
-    p = logits[:,:,0]/np.sum(logits, axis=2)
-    rands = rng.random(size=np.shape(p))
-    return (rands < p).astype(int)
+    p_new = p[:,:,0]/np.sum(p, axis=2)
+    rands = rng.random(size=np.shape(p_new))
+    out_arr = (rands > p_new).astype(int)
+  return np.where(np.all(logits==0, axis=2), -1, out_arr)
 
 
-def switch_bars(history, switches, h_len=3, symm=True):
+
+def switch_bars(history, switches, h_len=3, symm=True, prob=True):
   """
   This function generates conditional probabilities of switching given each
   3 letter history.
@@ -119,9 +123,9 @@ def switch_bars(history, switches, h_len=3, symm=True):
   chars = 'lrLR'
   seq_dict = {''.join(seq): [0,0] for seq in itertools.product(chars, repeat=3)}
 
-  for session_i in range(np.shape(history._xs)[1]):
-    h_session = history._xs[:, session_i]
-    s_session = switches._xs[:, session_i]
+  for session_i in range(np.shape(history)[1]):
+    h_session = history[:, session_i]
+    s_session = switches[:, session_i]
     for ts_i in range(h_len, np.shape(h_session)[0]):
       # -1 is the padding value. If i encounter a -1, all following vals are -1
       # so can be ignored
@@ -129,15 +133,15 @@ def switch_bars(history, switches, h_len=3, symm=True):
         break
       h_ts = h_session[ts_i-h_len: ts_i]
       key = ''.join([chars[int(a+2*b)] for a, b in h_ts])
-      if s_session[ts_i, 0] == h_session[ts_i-1, 0]:
+      if s_session[ts_i] == h_session[ts_i-1, 0]:
         seq_dict[key][0] += 1
       else:
         seq_dict[key][1] += 1
-
-  p_dict = {key: mean(val) for key, val in seq_dict.items()}
   if symm:
-    return symm_switch_bars(p_dict, h_len)
-  return p_dict
+    seq_dict = symm_switch_bars(seq_dict, h_len)
+  if prob:
+    seq_dict = {key: mean(val) for key, val in seq_dict.items()}
+  return seq_dict
 
 
 def symm_switch_bars(p_dict, h_len):
@@ -147,5 +151,6 @@ def symm_switch_bars(p_dict, h_len):
   for seq in eq_dict:
     tran1 = seq.translate(str.maketrans('abAB', 'lrLR'))
     tran2 = seq.translate(str.maketrans('abAB', 'rlRL'))
-    eq_dict[seq] = (p_dict[tran1] + p_dict[tran2]) / 2
+    p1, p2 = p_dict[tran1], p_dict[tran2]
+    eq_dict[seq] = [(p1[0]+p2[0]), (p1[1]+p2[1])]
   return eq_dict

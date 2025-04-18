@@ -8,12 +8,13 @@ betas = [1e-3, 3e-3, 1e-2, 3e-2]
 units = [1, 2]
 data_path = "/Users/michaelcondon/workspaces/pbm_group2/disentangled_rnns/data/processed"
 output_dir = "./models"
-n_steps = 100
+n_steps = 10000
 learning_rate = 1e-3
 train_prop = 0.7
 latent_size = 5
 update_mlp_shape = '5,5,5'
 choice_mlp_shape = '2,2'
+batch_size = 64
 seed = 42
 run_id = datetime.now().strftime("%Y-%m-%d_%H-%M")
 
@@ -28,7 +29,7 @@ with tqdm(total=len(betas)+len(units), desc='Overall Progress') as outer_bar:
 
         # i am using uv because i like uv but you could use python instead of uv run
         command = [
-            'uv', 'run', 'src/train.py',
+            'python', 'train.py',
             '--tr_path', os.path.join(data_path, 'train_df_70-30_2025-04-17_10-28.csv'),
             '--val_path', os.path.join(data_path, 'validation_df_70-30_2025-04-17_10-28.csv'),
             '--model', 'disrnn',
@@ -38,9 +39,10 @@ with tqdm(total=len(betas)+len(units), desc='Overall Progress') as outer_bar:
             '--n_steps', str(n_steps),
             '--learning_rate', str(learning_rate),
             '--train_prop', str(train_prop),
-            '--latent_size', str(latent_size),
+            '--dis_latent_size', str(latent_size),
             '--update_mlp_shape', update_mlp_shape,
             '--choice_mlp_shape', choice_mlp_shape,
+            '--batch_size', str(batch_size),
         ]
 
         try:
@@ -56,7 +58,7 @@ with tqdm(total=len(betas)+len(units), desc='Overall Progress') as outer_bar:
     for unit in units:
         outer_bar.set_postfix(latent_size=str(unit))
         command = [
-            'uv', 'run', 'src/train.py',
+            'python', 'train.py',
             '--tr_path', os.path.join(data_path, 'train_df_70-30_2025-04-17_10-28.csv'),
             '--val_path', os.path.join(data_path, 'validation_df_70-30_2025-04-17_10-28.csv'),
             '--model', 'rnn',
@@ -66,7 +68,8 @@ with tqdm(total=len(betas)+len(units), desc='Overall Progress') as outer_bar:
             '--n_steps', str(n_steps),
             '--learning_rate', str(learning_rate),
             '--train_prop', str(train_prop),
-            '--dis_latent_size', str(unit),
+            '--tiny_latent_size', str(unit),
+            '--batch_size', str(batch_size),
         ]
 
         try:

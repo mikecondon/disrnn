@@ -1,7 +1,7 @@
-import rnn_utils
-import disrnn
-import gru
-import switch_utils
+from src import rnn_utils
+from src import disrnn
+from src import gru
+from src import switch_utils
 import math
 import numpy as np
 import jax
@@ -67,17 +67,14 @@ def main(args):
         n_steps = args.n_steps,
         do_plot = False)
 
-    if args.model == 'disrnn':
-        param = args.beta
-    else:
-        param = 'args.tiny_latent_size'
     switch_utils.model_saver(params, 
                              args.model, 
-                             param, 
+                             args.beta,
+                             args.tiny_latent_size, 
                              args.out_dir,
                              dt=args.run_id, 
-                             loss=losses, 
-                             train_prop=args.train_prop)
+                             train_prop=args.train_prop,
+                             loss=losses)
 
 
 def parse_shape(shape_str):

@@ -15,12 +15,12 @@ import optax
 import jax
 import jax.numpy as jnp
 from jax.example_libraries import optimizers
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Callable, Optional, Tuple, Dict, Any
 from tqdm.notebook import tqdm
 import logging
+import seaborn as sns
 
 DatasetRNN = rnn_utils.DatasetRNN
 
@@ -187,15 +187,15 @@ def train_gru_network(
         l_train, params, opt_state = train_step(
             params, opt_state, xs_train, ys_train, train_key
         )
-        training_loss_history.append(float(l_train))
 
         # Validate periodically
         if step % 50 == 0 or step == n_steps - 1:
 
+            training_loss_history.append(l_train / xs_train.shape[1])
             xs_val, ys_val = validation_dataset._xs, validation_dataset._ys
             l_validation = compute_loss(params, xs_val, ys_val, val_key)
             last_val_loss = float(l_validation)
-            validation_loss_history.append(last_val_loss)
+            validation_loss_history.append(last_val_loss / xs_val.shape[1])
 
             pbar.set_postfix({
                 "Train Loss": f"{l_train / xs_train.shape[1]:.3e}",
@@ -214,18 +214,16 @@ def train_gru_network(
 
     # Plotting
     if n_steps > 1 and do_plot:
-        plt.figure(figsize=(10, 6))
-        plt.plot(training_loss_history, label='Training Loss', color='blue', alpha=0.8)
-        if any(not np.isnan(v) for v in validation_loss_history):
-            val_steps = np.linspace(0, len(training_loss_history) - 1, len(validation_loss_history)).astype(int)
-            plt.plot(val_steps, validation_loss_history, label='Validation Loss', color='red', linestyle='--', marker='o', markersize=4)
+        plt.figure(figsize=(14, 4.2))
+        sns.set_theme(style='ticks', font_scale=1.6, rc={'axes.labelsize':18, 'axes.titlesize':18}) 
+        val_steps = np.linspace(0, n_steps, len(validation_loss_history))
+        plt.semilogy(val_steps, training_loss_history, label='Training Loss', alpha=0.8, color=sns.color_palette()[0])
+        plt.semilogy(val_steps, validation_loss_history, label='Validation Loss', linestyle='--', marker='o', markersize=4, alpha=0.8, color=sns.color_palette()[1])
         plt.xlabel('Training Step')
         plt.ylabel('Loss')
-        plt.yscale('log')
-        plt.title('Training and Validation Loss Over Steps')
         plt.legend()
         plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-        plt.tight_layout()
+        sns.despine()
         plt.show()
 
     #  Prepare Results

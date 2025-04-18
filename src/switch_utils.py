@@ -1,11 +1,13 @@
+# This file is bespoke for Practical Biomedical Modelling Assignment
+# No license applies to this file.
+
 from typing import Optional
 from src import rnn_utils
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import math
 import json, os
 import jax
+import jax.numpy as jnp
 import itertools
 
 DatasetRNN = rnn_utils.DatasetRNN
@@ -48,22 +50,29 @@ def get_dataset(df: pd.DataFrame,
 def model_saver(params: dict, 
                 model,
                 beta,
+                tiny_latent_size,
                 out_dir, 
                 dt, 
                 train_prop,
                 loss: Optional[dict]=None):
+  
+  if model == 'disrnn':
+      param = f"{beta:.0e}"
+  else:
+      param = f"{tiny_latent_size:.0f}"
   cv = f"{train_prop*100:.0f}-{(1-train_prop)*100:.0f}"
-  file_path = os.path.join(out_dir, f"params_{model}_{beta:.0e}_{cv}_{dt}.json")
+
+  file_path = os.path.join(out_dir, f"params_{model}_{param}_{cv}_{dt}.json")
   with open(file_path, 'w') as f:
     json.dump(params, f, indent=4, cls=rnn_utils.NpEncoder)
 
   if loss != None:
-    file_path = os.path.join(out_dir, f"loss_{model}_{beta:.0e}_{cv}_{dt}.json")
-    with open(file_path, 'w') as f:
-      json.dump(loss, f, indent=4, cls=rnn_utils.NpEncoder)
+    out_df = pd.DataFrame(loss)
+    file_path = os.path.join(out_dir, f"loss_{model}_{param}_{cv}_{dt}.csv")
+    out_df.to_csv(file_path)
 
 
-def model_loader(params_file):
+def model_loader(params_file, loss_file=None):
   """
   Loads model parameters and training loss from a JSON file saved with NpEncoder
   and converts lists back to JAX arrays.
@@ -71,28 +80,11 @@ def model_loader(params_file):
   with open(params_file, 'r') as f:
     params_raw = json.load(f)
   params = rnn_utils.to_jnp(params_raw)
+  if loss_file != None:
+     loss_df = pd.read_csv(loss_file, index_col=0)
+     return params, loss_df
 
   return params
-
-
-def split_saver(tr_eps, va_eps, dt, train_prop):
-  out_df = pd.concat((pd.DataFrame({'Session': tr_eps.values,
-                                    'Side': 'train'},
-                                    index=tr_eps.index.to_list()),
-                      pd.DataFrame({'Session': va_eps.values,
-                                    'Side': 'validation'},
-                                    index=va_eps.index.to_list())))
-  cv = f'{train_prop*100:.0f}-{(1-train_prop)*100:.0f}'
-  directory = "/Users/michaelcondon/workspaces/pbm_group2/disentangled_rnns/models"
-  file_path = os.path.join(directory, f'split_{dt}_{cv}.csv')
-  out_df.to_csv(file_path)
-
-
-def split_loader(file_path):
-  df = pd.read_csv(file_path, index_col=0)
-  tr_eps = df[df['Side']=='train']['Session']
-  va_eps = df[df['Side']=='validation']['Session']
-  return tr_eps, va_eps
 
 
 def sampler(logits, sample_type, key=None):
@@ -200,3 +192,23 @@ def blocker(df, m=10, n=10, ds=None):
         padded_arrays.append(padded_arr)
     out_arr = np.stack(padded_arrays).transpose((3, 0, 1, 2))
     return out_arr
+
+
+def log_likelihood_normalised(
+      labels: np.ndarray, output_logits: np.ndarray
+  ) -> float:
+    # Mask any errors for which label is negative
+    mask = jnp.logical_not(labels < 0)
+    log_probs = jax.nn.log_softmax(output_logits)
+    if labels.shape[2] != 1:
+      raise ValueError(
+          'Categorical loss function requires targets to be of dimensionality'
+          ' (n_timesteps, n_episodes, 1)'
+      )
+    one_hot_labels = jax.nn.one_hot(
+        labels[:, :, 0], num_classes=output_logits.shape[-1]
+    )
+    log_liks = one_hot_labels * log_probs
+    masked_log_liks = jnp.multiply(log_liks, mask)
+    loss = jnp.nansum(masked_log_liks)
+    return loss / np.sum(labels!=-1)

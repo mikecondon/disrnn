@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optax
 from tqdm.auto import tqdm
+import seaborn as sns
 
 
 class DatasetRNN():
@@ -90,20 +91,22 @@ class DatasetRNN():
     """Return a batch of data, including both xs and ys."""
 
     # Define the chunk we want: from idx to idx + batch_size
-    start = self._idx
-    end = start + self._batch_size
     # Check that we're not trying to overshoot the size of the dataset
     # assert end <= self._dataset_size
     # Update the index for next time
     # if end == self._dataset_size:
-    if end >= self._dataset_size:
-      x = jnp.concatenate((self._xs[:, start:], self._xs[:, :end%self._dataset_size]), axis=1)
-      y = jnp.concatenate((self._ys[:, start:], self._ys[:, :end%self._dataset_size]), axis=1)
-      self._idx = end % self._dataset_size
-    else:
-      x = self._xs[:, start:end]
-      y = self._ys[:, start:end]
-      self._idx = end
+    if self._idx+self._batch_size >= self._dataset_size:
+      # x = jnp.concatenate((self._xs[:, start:], self._xs[:, :end%self._dataset_size]), axis=1)
+      # y = jnp.concatenate((self._ys[:, start:], self._ys[:, :end%self._dataset_size]), axis=1)
+      self._idx = 0
+    start = self._idx
+    end = start + self._batch_size
+    # else:
+    x = self._xs[:, start:end]
+    y = self._ys[:, start:end]
+    self._idx = end
+    if np.shape(x)[1]!=self._batch_size or np.shape(y)[1]!=self._batch_size:
+      raise ValueError
 
     # pad_n = max(0, end - self._dataset_size)
     # x = jnp.pad(self._xs[:, start:end, :], ((0,0), (0,pad_n), (0,0)), 'constant', constant_values=-1.0)
@@ -244,20 +247,20 @@ def train_network(
     return loss, params, opt_state
 
   # Train the network!
-  training_loss = []
-  validation_loss = []
-  l_validation = None
+  training_loss_history = []
+  validation_loss_history = []
   pbar = tqdm(jnp.arange(n_steps), desc="Training Progress", leave=False, position=1)
   for step in pbar:
     random_key, key1, key2 = jax.random.split(random_key, 3)
     # Train on training data
     xs_tr, ys_tr = next(training_dataset)
     l_train, params, opt_state = train_step(params, opt_state, xs_tr, ys_tr, key2)
-    training_loss.append(float(l_train) / np.shape(xs_tr)[1])
-    if step % 10 == 9 or step==n_steps-1:
+
+    if step % 50 == 0 or step == n_steps - 1:
+      training_loss_history.append(float(l_train) / np.shape(xs_tr)[1])
       xs_va, ys_va = validation_dataset._xs, validation_dataset._ys
       l_validation = compute_loss(params, xs_va, ys_va, key1)
-      validation_loss.append(float(l_validation) / np.shape(xs_va)[1])
+      validation_loss_history.append(float(l_validation) / np.shape(xs_va)[1])
       pbar.set_postfix({
             "Train Loss": f"{l_train / np.shape(xs_tr)[1]:.2e}",
             "Val Loss": f"{l_validation / np.shape(xs_va)[1]:.2e}"
@@ -268,25 +271,29 @@ def train_network(
   pbar.close()
 
   if n_steps > 1 and do_plot:
-    plt.figure()
-    plt.semilogy(training_loss, color='black')
-    plt.semilogy(np.linspace(0, len(training_loss), len(validation_loss)), validation_loss, color='tab:red', linestyle='dashed')
+    plt.figure(figsize=(14, 4.2))
+    sns.set_theme(style='ticks', font_scale=1.6, rc={'axes.labelsize':18, 'axes.titlesize':18}) 
+    val_steps = np.linspace(0, n_steps, len(validation_loss_history))
+    plt.semilogy(val_steps, training_loss_history, label='Training Loss', alpha=0.8, color=sns.color_palette()[0])
+    plt.semilogy(val_steps, validation_loss_history, label='Validation Loss', linestyle='--', marker='o', markersize=4, alpha=0.8, color=sns.color_palette()[1])
     plt.xlabel('Training Step')
-    plt.ylabel('Mean Loss')
+    plt.ylabel('Loss')
     plt.legend(('Training Set', 'Validation Set'))
-    plt.title('Loss over Training')
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    sns.despine()
+    plt.show()
 
   losses = {
-      'training_loss': np.array(training_loss),
-      'validation_loss': np.array(validation_loss)
+      'training_loss': np.array(training_loss_history),
+      'validation_loss': np.array(validation_loss_history)
   }
 
   # Check if anything has become NaN that should not be NaN
   if nan_in_dict(params):
     raise ValueError('NaN in params')
-  if training_loss and np.isnan(training_loss[-1]):
+  if training_loss_history and np.isnan(training_loss_history[-1]):
     raise ValueError('NaN in loss')
-  if validation_loss and np.isnan(validation_loss[-1]):
+  if validation_loss_history and np.isnan(validation_loss_history[-1]):
     raise ValueError('NaN in loss')
 
   return params, opt_state, losses

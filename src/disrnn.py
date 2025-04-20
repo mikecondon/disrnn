@@ -433,23 +433,3 @@ def plot_update_rules(params, make_network):
 
 
   return figs
-
-
-def log_likelihood_normalised(
-      labels: np.ndarray, output_logits: np.ndarray
-  ) -> float:
-    # Mask any errors for which label is negative
-    mask = jnp.logical_not(labels < 0)
-    log_probs = jax.nn.log_softmax(output_logits)
-    if labels.shape[2] != 1:
-      raise ValueError(
-          'Categorical loss function requires targets to be of dimensionality'
-          ' (n_timesteps, n_episodes, 1)'
-      )
-    one_hot_labels = jax.nn.one_hot(
-        labels[:, :, 0], num_classes=output_logits.shape[-1]
-    )
-    log_liks = one_hot_labels * log_probs
-    masked_log_liks = jnp.multiply(log_liks, mask)
-    loss = jnp.nansum(masked_log_liks)
-    return loss / np.sum(labels!=-1)

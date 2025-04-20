@@ -30,9 +30,9 @@ class HkGRU(hk.RNNCore):
 
   def __init__(
       self,
-      hidden_size: int, # Size of the GRU hidden state
-      target_size: int, # Size of the final output prediction
-      name: Optional[str] = None, # Optional name for the Haiku module
+      hidden_size: int,
+      target_size: int,
+      name: Optional[str] = None,
   ):
     """
     Initializes the GRU RNNCore.
@@ -239,6 +239,5 @@ def train_gru_network(
         raise ValueError('NaN detected in final training loss!')
     if validation_loss_history and np.isnan(validation_loss_history[-1]) and len(validation_loss_history) > 0:
         raise ValueError('NaN detected in final validation loss!')
-
 
     return params, opt_state, losses_dict

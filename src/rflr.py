@@ -2,7 +2,7 @@
 # No license applies to this file.
 
 """
-Logistic regression based on Beron 2022 built with Jax so it can fit into disentangled RNN framework.
+Recursive Formulation of Logistic Regression based on
 
 Beron, C. C., Neufeld, S. Q., Linderman, S. W., & Sabatini, B. L. (2022). Mice exhibit stochastic and efficient action switching during probabilistic decision making. 
 Proceedings of the National Academy of Sciences, 119(15), e2113961119. 
@@ -10,49 +10,77 @@ https://doi.org/10.1073/pnas.2113961119
 """
 
 from src import rnn_utils
+import haiku as hk
 import optax
-from tqdm.auto import tqdm
-import numpy as np
 import jax
 import jax.numpy as jnp
-import haiku as hk
-import logging
-from typing import Callable, Optional, Tuple, Dict, Any
 from jax.example_libraries import optimizers
-
-import jax
-import jax.numpy as jnp
-import haiku as hk
-import optax
+import matplotlib.pyplot as plt
+import numpy as np
+from typing import Callable, Optional, Tuple, Dict, Any
+from tqdm.notebook import tqdm
+import logging
+import seaborn as sns
 
 DatasetRNN = rnn_utils.DatasetRNN
 
 
-def vmap_forward_fn(sequence_input, output_dim=1):
-  """
-  Applies the MLP over the time dimension using hk.vmap. Equivalent to unroll network,
-  Input shape: (batch_size, time_steps, feature_dim)
-  """
-  if sequence_input.ndim != 3:
-      raise ValueError("Input must be 3D (time, batch, features)")
+class RFLR(hk.RNNCore):
+  """RFLR implemented using Haiku RNN style."""
 
-  mlp = hk.Linear(output_dim, name="sliding_mlp", with_bias=False)
-  vmapped_mlp = hk.vmap(mlp, in_axes=0, out_axes=0, split_rng=False)
-  output_sequence = vmapped_mlp(sequence_input)
-  return output_sequence
+  def __init__(
+      self,
+      name: Optional[str] = None,
+  ):
+    """
+    Initializes the RFLR RNNCore.
+    """
+    super().__init__(name=name)
+
+  def __call__(self, observations: jnp.ndarray, prev_state: jnp.ndarray):
+    """
+    Performs one step of the RFLR computation.
+    """
+    alpha = hk.get_parameter(name='alpha', 
+                             shape=[], 
+                             init=hk.initializers.RandomNormal(stddev=0.1))
+    
+    beta = hk.get_parameter(name='beta', 
+                             shape=[], 
+                             init=hk.initializers.RandomNormal(stddev=0.1))
+    
+    tau = hk.get_parameter(name='tau',
+                           shape=[],
+                           init=hk.initializers.Constant(1))
+    
+    # rectify tau
+    tau = jnp.maximum(tau, 1e-6)
+
+    # remember that unroll will unroll over the timestep dimension, but you need to
+    # allow for an arbitrary batch size.
+    c_bar_t = 2 * observations[..., 0:1] - 1
+    r_t = observations[..., 1:2]
+
+    next_state = jnp.exp(-1/tau) * prev_state + beta * jnp.multiply(c_bar_t, r_t)
+    y_hat = alpha * c_bar_t + next_state
+
+    return y_hat, next_state
+
+  def initial_state(self, batch_size: Optional[int]):
+    """
+    Returns the initial hidden state for the RFLR.
+    Here, the latent size is just 1 for e^(-1/tau) + beta * c * r, but still need
+    the extra dimension
+    """
+    if batch_size is None:
+        state_shape = (1,)
+    else:
+        state_shape = (batch_size, 1)
+    return jnp.zeros(state_shape, jnp.float32)
+  
 
 
-def lr_window_fn(xs, ys=None, lag=5):
-    c = xs[:,:,0]*2-1
-
-    c_r = np.pad(np.lib.stride_tricks.sliding_window_view(c * xs[:,:,1], lag, axis=0),
-                 ((lag-1, 0), (0,0),(0,0)), mode='constant', constant_values=0)
-    if ys is None:
-        return np.concatenate((c[:,:,np.newaxis], c_r), axis=2)    
-    return np.concatenate((c[:,:,np.newaxis], c_r), axis=2), ys
-
-
-def train_lr(
+def train_rflr(
     make_network: Callable[[], hk.RNNCore],
     training_dataset: DatasetRNN,
     validation_dataset: DatasetRNN,
@@ -65,7 +93,15 @@ def train_lr(
     ) -> Tuple[hk.Params, optax.OptState, Dict[str, np.ndarray]]:
     """Trains a standard logistic regression."""
 
-    model = hk.transform(make_network)
+    def unroll_rflr(xs: jnp.ndarray) -> jnp.ndarray:
+        """Applies the RNN core over the time dimension of the input sequence."""
+        core = make_network()
+        batch_size = jnp.shape(xs)[1]
+        initial_state = core.initial_state(batch_size)
+        y_hats_sequence, _ = hk.dynamic_unroll(core, xs, initial_state)
+        return y_hats_sequence
+
+    model = hk.transform(unroll_rflr)
 
     if random_key is None:
         random_key = jax.random.PRNGKey(42)
@@ -74,14 +110,14 @@ def train_lr(
         random_key, key1 = jax.random.split(random_key)
     
     sample_xs, _ = next(training_dataset)
-    params = model.init(key1, lr_window_fn(sample_xs), output_dim=1)
+    params = model.init(key1, sample_xs)
     opt_state = opt.init(params)
 
     @jax.jit
     def categorical_log_likelihood(params: hk.Params, xs: jnp.ndarray, labels: jnp.ndarray) -> jnp.ndarray:
         """Computes Categorical Cross-Entropy loss, handling negative labels as masks."""
         mask = jnp.logical_not(labels < 0)
-        log_odds = model.apply(params, None, xs, output_dim=1)
+        log_odds = model.apply(params, None, xs)
 
         ps = jax.nn.log_sigmoid(jnp.concatenate((-log_odds, log_odds), axis=-1))
         if labels.shape[2] != 1:
@@ -127,13 +163,13 @@ def train_lr(
     
     pbar = tqdm(jnp.arange(n_steps), desc="Training Progress", leave=True, position=1)
     for step in pbar:
+        # xs_train, ys_train = next(training_dataset)
         xs_train, ys_train = next(training_dataset)
-        lr_xs_train, lr_ys_train = lr_window_fn(xs_train, ys_train)
 
         random_key, _, _ = jax.random.split(random_key, 3)
         
         l_train, params, opt_state = train_step(
-            params, opt_state, lr_xs_train, lr_ys_train
+            params, opt_state, xs_train, ys_train
         )
 
         # Validate periodically
@@ -141,7 +177,7 @@ def train_lr(
 
             training_loss_history.append(l_train / xs_train.shape[1])
             xs_val, ys_val = validation_dataset._xs, validation_dataset._ys
-            lr_xs_val, lr_ys_val = lr_window_fn(xs_val, ys_val)
+            lr_xs_val, lr_ys_val = xs_val, ys_val
             l_validation = categorical_log_likelihood(params, lr_xs_val, lr_ys_val)
             validation_loss_history.append(l_validation / lr_xs_val.shape[1])
 
@@ -158,7 +194,6 @@ def train_lr(
     logging.info(f"Final Training Loss: {training_loss_history[-1]:.3e}")
     if validation_loss_history:
         logging.info(f"Final Validation Loss: {validation_loss_history[-1]:.3e}")
-
 
     #  Prepare Results
     losses_dict = {

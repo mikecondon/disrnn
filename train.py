@@ -104,7 +104,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--out_dir', type=str, default='./models', help='Base directory to save models and splits.')
     parser.add_argument('--run_id', type=str, default=datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), help='Unique identifier for this run/sweep (used for grouping outputs). Defaults to current timestamp.')
-    parser.add_argument('--batch_size', type=int, default=30, help='Batch size for training and validation.')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training and validation.')
     parser.add_argument('--train_prop', type=float, default=0.7, help='Proportion of data to use for training')
 
     # for disRNN

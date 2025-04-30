@@ -87,7 +87,7 @@ def model_loader(params_file, loss_file=None):
   return params
 
 
-def sampler(logits, sample_type, key=None):
+def sampler(logits, sample_type, key=None, sigmoid=False):
   """
   The shape is (no_timesteps, no_sessions, 2). The dimensions of axis 2
   are p_est of choosing left or right respectively.
@@ -96,7 +96,10 @@ def sampler(logits, sample_type, key=None):
   if key == None:
     key = 42
   rng = np.random.default_rng(seed=key)
-  p = jax.nn.softmax(logits, axis=2)
+  if sigmoid:
+    p = jax.nn.sigmoid(jnp.concatenate((-logits, logits), axis=2))
+  else:   
+    p = jax.nn.softmax(logits, axis=2)
   if sample_type == 'greedy':
     out_arr = np.argmax(p, axis=2)
   elif sample_type == 'thompson':
@@ -148,7 +151,7 @@ def symm_switch_bars(p_dict, h_len):
   return eq_dict
 
 
-def blocker(df, m=10, n=10, ds=None):
+def blocker(df, ds, mask, m=10, n=10):
     """
     Returns an array of shape (2*n timesteps, sessions, blocks, features)
     where the third axis corresponds to elems before and after the 
@@ -160,16 +163,16 @@ def blocker(df, m=10, n=10, ds=None):
     eps = df['Session'].unique()
     for i, session_i in enumerate(eps):
         sess_data = df[df['Session']==session_i].sort_values('Trial')
-        if ds is None: 
-            sess_decis = sess_data['Decision']
-        else: 
-            sess_decis = ds[:,i]
+        sess_decis = ds[:,i]
+        sess_mask = mask[:, i]
         block_idx = np.squeeze(np.argwhere(np.abs(np.diff(sess_data['Target']))), axis=1)
         block_changes.append(block_idx)
         sess_changes = []
         bl_len = 0
         for j in block_idx:
             if j-m>=0 and j+n<len(sess_data):
+                if not sess_mask[j+n]:
+                   break
                 change_arr = sess_decis[j-m:j+n]
                 target_arr = sess_data['Target'].iloc[j-m:j+n]
                 sess_changes.append(np.stack((change_arr, target_arr)))

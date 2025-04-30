@@ -5,8 +5,11 @@ import argparse
 from  datetime import datetime
 
 def main(args):
-    print(f"Saving results to base directory: {args.out_dir}")
-    df = pd.read_csv(args.data_path)
+    try:
+        print(f"Saving results to base directory: {args.out_dir}")
+        df = pd.read_csv(args.data_path)
+    except FileNotFoundError:
+        print(f"Error: Could not find raw data directory: {args.data_path}")
 
     # shuffle the sessions
     eps = df['Session'].value_counts().sample(frac=1)
@@ -27,7 +30,7 @@ def main(args):
         print(f"saved validation data: {val_path}")
 
     except FileNotFoundError:
-        print(f"Error: Could not find python or src.train. Check paths/environment.")
+        print(f"Error: Could not find processed data directory: {args.out_dir}")
 
 
 if __name__ == "__main__":

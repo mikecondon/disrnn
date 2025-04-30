@@ -243,6 +243,7 @@ def plot_bottlenecks(params, sort_latents=True, obs_names=None):
   )
   plt.ylabel('Latent #')
   plt.title('Update MLP Bottlenecks')
+  plt.tight_layout()
   return fig
 
 
@@ -273,7 +274,7 @@ def plot_update_rules(params, make_network):
         1, len(observations), figsize=(len(observations) * 4, 5.5)
     )
     plt.subplot(1, len(observations), 1)
-    plt.ylabel('Updated Activity')
+    plt.ylabel('Updated Latent')
 
     for observation_i, observation in enumerate(observations):
       plt.subplot(1, len(observations), observation_i + 1)
@@ -296,7 +297,7 @@ def plot_update_rules(params, make_network):
       plt.title(titles[observation_i])
       plt.xlim(-lim, lim)
       plt.ylim(-lim, lim)
-      plt.xlabel('Previous Activity')
+      plt.xlabel('Previous Latent')
 
       if isinstance(ax, np.ndarray):
         ax[observation_i].set_aspect('equal')
@@ -382,7 +383,7 @@ def plot_update_rules(params, make_network):
     # If this latent's bottleneck is open
     if latent_sigmas[latent_i] < 0.5:
       # Which of its input bottlenecks are open?
-      update_mlp_inputs = np.argwhere(update_sigmas[latent_i] < 0.9)
+      update_mlp_inputs = np.argwhere(update_sigmas[latent_i] < 0.5)
       choice_sensitive = np.any(update_mlp_inputs == 0)
       reward_sensitive = np.any(update_mlp_inputs == 1)
       # Choose which observations to use based on input bottlenecks

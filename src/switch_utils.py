@@ -154,8 +154,7 @@ def symm_switch_bars(p_dict, h_len):
 def blocker(df, ds, mask, m=10, n=10):
     """
     Returns an array of shape (2*n timesteps, sessions, blocks, features)
-    where the third axis corresponds to elems before and after the 
-    block changes
+    where the third axis corresponds to which block change you want
     """
     block_changes = []
     block_window = []
